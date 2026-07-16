@@ -1,0 +1,208 @@
+---
+title: "DEA of TES"
+output: html_notebook
+---
+
+Load packages
+
+```{r}
+library(tidyverse)
+library(DESeq2)
+```
+
+
+Reading in metadata
+
+```{r}
+getwd() # is project folder
+
+# the sample metadata for both male and female is in a .csv in the data folder
+
+metadata <- read.csv("../data/metadata/mouse_TE_metadata.csv")
+
+# inspect
+metadata
+dim(metadata)
+str(metadata)
+```
+
+
+Read in count data
+
+```{r}
+# Point to folder with the count .tsv file for each sample
+folder_path <- "../data/counts/"
+files_path <- list.files(path = folder_path, pattern = "\\.tsv$", full.names = T) # makes list
+files_list <- lapply(files_path, read_tsv)
+
+# Make into dataframe
+str(files_list)
+count_data_allsamples <- files_list %>% purrr::reduce(full_join, by='transcript') # There are NAs which can be dealt with later
+# make the Geneid the row id, turns into matrix
+count_data_allsamples <- count_data_allsamples %>% remove_rownames %>% column_to_rownames(var="transcript")
+head(count_data_allsamples)
+```
+
+Make metadata row names match and reorder samples for both so they match 
+
+```{r}
+metadata <- metadata %>% remove_rownames %>% column_to_rownames(var="sample") # make row names
+all(colnames(count_data_allsamples) %in% rownames(metadata)) # Check all samples are there
+
+# make rownames/colnames in same order
+count_data_allsamples <- count_data_allsamples[, rownames(metadata)]
+all(rownames(metadata) == colnames(count_data_allsamples)) # True
+
+# Replace all NA values with 0 
+count_data_allsamples[is.na(count_data_allsamples)] <- 0
+```
+
+
+Create DESeq object
+
+```{r}
+dds <- DESeqDataSetFromMatrix(countData = count_data_allsamples,
+                              colData = metadata,
+                              design = ~ sex + treatment) # Treatment is last as it's the main thing we want to look at
+```
+
+Filter low count genes, based on smallets group size per DESeq2 vignette
+
+```{r}
+#prefilter 
+smallestGroupSize <- 5 # sex/treatment
+keep <- rowSums(counts(dds) >= 10) >= smallestGroupSize 
+dds <- dds[keep,] # 56965 genes remaining
+```
+
+Relevel to ensure comparisons are being made relative to sham level
+
+```{r}
+dds$treatment <- relevel(dds$treatment, ref = 'SHAM')
+```
+
+
+Normalise the count data:
+
+```{r}
+# normalise 
+dds <- estimateSizeFactors(dds)
+normalized_counts <- counts(dds, normalized = T)
+# write normalised counts out to file
+#write.table(normalized_counts, file="../data/normalised_counts_allsamples.tsv", sep = '\t', quote=F, col.names = NA)
+```
+
+
+Differential expression analysis
+```{r}
+dds <- DESeq(dds)
+res <- results(dds, alpha = 0.05)
+summary(res) # this looks much better, but still have questions
+
+
+# write out full results
+#write.csv(as.data.frame(res), file="../data/DE_TEs.csv")
+
+```
+
+
+Visualising results
+
+```{r}
+
+# visualising results
+DE_TEs <- data.frame(res)
+head(DE_TEs)
+dim(DE_TEs)
+
+# write out significant results
+DE_TEs <- data.frame(res)
+head(DE_TEs)
+signif_TEs <- DE_TEs %>%
+  filter(padj < 0.05)
+write.csv(signif_TEs, file="../results_data/signif_DE_TEs.csv")
+
+
+# rlog transform for purposes of PCA transformation
+rld <- rlog(dds)
+TE_PCA <- plotPCA(rld, intgroup=c("treatment", "sex")) # separation of sex, some separation of treatment, more in females
+
+# customise pca??
+
+#pcaData <- plotPCA(rld, intgroup=c("condition", "type"), returnData=TRUE)
+#percentVar <- round(100 * attr(pcaData, "percentVar"))
+#ggplot(pcaData, aes(PC1, PC2, color=condition, shape=type)) +
+  #geom_point(size=3) +
+  #xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  #ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  #coord_fixed()
+
+ggsave("../figures/TE_PCA.png", TE_PCA, dpi = 300)
+```
+
+## interaction, shrinkage??
+
+Check dispersion
+
+```{r}
+# dispersion plot
+plotDispEsts(dds)
+
+```
+
+Volcano plot
+
+```{r}
+library(ggplot2)
+
+# Add column for labelling purposes with either up/downregulated or not significant
+DE_TEs$signif <- ifelse(DE_TEs$padj < 0.05 & abs(DE_TEs$log2FoldChange) > 0.5, ifelse(DE_TEs$log2FoldChange > 0, "Up", "Down"), "NotSig") # made LFC threshold low to capture downreg genes
+
+# Omit NAs in the padj column, they are low counts and outliers, but why so many?
+DE_TEs %>% filter(if_any(everything(), is.na)) %>%
+  nrow() # 5534 rows containing NAs
+DE_TEs <- na.omit(DE_TEs)
+                                     
+DE_TEs %>%
+  filter(padj < 0.05) # 15 signif genes with LFC over 0.5
+
+# Make labels for the plot
+library(ggrepel)
+# create a datframe just holding the signif genes
+signifgenes <- DE_TEs %>%
+  filter(padj < 0.05)
+signifgenes
+# for labelling
+DE_TEs$label = if_else(rownames(DE_TEs) %in% rownames(signifgenes), rownames(DE_TEs), "")
+
+# Plot
+volcano <- ggplot(DE_TEs, aes(x = log2FoldChange, y = -log10(padj), color = signif)) +
+geom_point()+labs(x = "Log2 Fold Change", y = "-Log10 p-value",title = "Differentially expressed TEs") +theme(legend.position = "right")+ scale_colour_manual(name = "Expression", labels = c("Downregulated", "Not significant", "Upregulated"), values = c("Down" = "blue", "NotSig" = "darkgrey", "Up" = "red"))+geom_text_repel(aes(label = label), size = 2)
+
+volcano
+ggsave("../figures/TE_volcano_plot.png", volcano, dpi = 300)
+
+```
+
+Make heatmap
+
+```{r}
+library("pheatmap")
+
+sampleDists <- dist(t(assay(rld)))
+
+select <- order(rowMeans(counts(dds,normalized=TRUE)),
+                decreasing=TRUE)[1:20]
+df <- as.data.frame(colData(dds)[,c("treatment","sex")])
+ntd <- normTransform(dds)
+heatmap <- pheatmap(assay(ntd)[select,], cluster_rows=FALSE, show_rownames=FALSE,
+         cluster_cols=FALSE, annotation_col=df)
+
+ggsave("../figures/TE_heatmap.png", heatmap, dpi = 300)
+```
+
+
+
+
+
+
