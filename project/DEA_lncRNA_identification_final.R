@@ -30,21 +30,32 @@ str(files_list)
 count_data_allsamples <- files_list %>% purrr::reduce(full_join, by='transcript') 
 
 # Remove short repeats/low complexity sequences (have parentheses in them)- before maing gene id the row id so there is a column to filter on
+# Also have to filter strings with "rich" as well as these are low complexity 
 str(count_data_allsamples)
 dim(count_data_allsamples)
 head(count_data_allsamples)
 
+# how many have ()?
 count_data_allsamples %>%
   filter(str_detect(transcript, "^\\(")) %>%
-  nrow() # 148686 out of 1555363
+  nrow() #148686 are short repeats
 
-# Make filtered dataframe
+count_data_allsamples %>%
+  filter(str_detect(transcript, "rich")) %>%
+  nrow() #24929 are low complexity
+
+# Together
+count_data_allsamples %>%
+  filter(str_detect(transcript, "^\\(|rich")) %>%
+  nrow() # 173615 is the total of the two above
+
+# Make filtered dataframe by negating match
 count_data_allsamples_filtered <- count_data_allsamples %>%
-  filter(!(str_detect(transcript, "^\\(")))
+  filter(!(str_detect(transcript, "^\\(|rich")))
 
 # Check
 head(count_data_allsamples_filtered)
-dim(count_data_allsamples_filtered) # 1406677 TEs remaining
+dim(count_data_allsamples_filtered) # 1381748 TEs remaining
 
 # make the Geneid the row id 
 count_data_allsamples_filtered <- count_data_allsamples_filtered %>% remove_rownames %>% column_to_rownames(var="transcript")
@@ -85,7 +96,7 @@ normalized_counts <- counts(dds, normalized = T)
 # Differential expression analysis
 dds <- DESeq(dds)
 res <- results(dds, alpha = 0.05)
-summary(res) # with the interaction term there are 457 genes upreg and 677 downreg
+summary(res) # with the interaction term there are 361 genes upreg and 547 downreg
 
 # write out results
 #write.csv(as.data.frame(res), file="../data/DE_TEs_plus.csv")
@@ -94,7 +105,7 @@ summary(res) # with the interaction term there are 457 genes upreg and 677 downr
 resultsNames(dds) # we are interested in sham vs sni which is coef 3
 resNorm <- lfcShrink(dds, coef=3, type="apeglm") # apeglm is recommended
 class(resNorm)
-summary(resNorm, alpha = 0.05) # 226 upregulated, 169 downregulated, 7 outliers
+summary(resNorm, alpha = 0.05) # 188 upregulated, 143 downregulated, 7 outliers
 
 # MA plot
 plotMA(resNorm, main="apeglm")
@@ -107,14 +118,14 @@ dim(DE_TEs_int)
 
 DE_TEs_int %>%
   filter(padj < 0.05) %>%
-  nrow() # 395
+  nrow() # 331
 
 # Write these out as a dataframe
 DE_TEs_int_signif_all <- DE_TEs_int %>% 
   filter(padj < 0.05) %>%
   arrange(desc(log2FoldChange))
 
-# Saved again 26.07 after filtering
+# Saved again 27.07 after filtering low complexity as well
 #write.csv(DE_TEs_int_signif_all, "../results_data/signif_DE_TEs.csv")
 
 ## Visualisation
@@ -129,7 +140,7 @@ plotPCA(rld, intgroup=c("treatment", "sex"))
 pca_plot <- ggplot(pca_dat, aes(x = PC1, y = PC2, colour = treatment, shape = sex)) +
   geom_point(size = 4) + theme_classic() + scale_shape_discrete(name = "Sex") + scale_colour_manual(name = "Treatment", values = c("orangered1", "skyblue2")) + xlab("PC1: 15% variance") + ylab("PC2: 9% variance") + labs(title = "PCA of TE expression") 
 
-# Saved 26/07
+# Saved 27/07
 #ggsave("../figures/TE_PCA_plot.png", pca_plot, dpi=300)
 
 # Dispersion plot
@@ -144,12 +155,12 @@ DE_TEs_int$signif <- ifelse(DE_TEs_int$padj < 0.05 & abs(DE_TEs_int$log2FoldChan
 
 # Omit NAs, they are low counts and outliers
 DE_TEs_int %>% filter(if_any(everything(), is.na)) %>%
-  nrow() # 26354
+  nrow() # 26483
 DE_TEs_int <- na.omit(DE_TEs_int)
 
 # Plot
 volcanoplot <- ggplot(DE_TEs_int, aes(x = log2FoldChange, y = -log10(padj), color = signif)) +
-  geom_point(size = 1)+labs(x = "Log2 Fold Change", y = "-Log10 p-value",title = "Differentially Expressed TEs") +theme(legend.position = "right")+ scale_colour_manual(name = "Expression", labels = c("Downregulated: 169", "Not significant", "Upregulated: 226"), values = c("Down" = "blue", "NotSig" = "darkgrey", "Up" = "red")) + theme_classic()
+  geom_point(size = 1)+labs(x = "Log2 Fold Change", y = "-Log10 p-value",title = "Differentially Expressed TEs") +theme(legend.position = "right")+ scale_colour_manual(name = "Expression", labels = c("Downregulated: 143", "Not significant", "Upregulated: 188"), values = c("Down" = "blue", "NotSig" = "darkgrey", "Up" = "red")) + theme_classic()
 
 # Save plot, saved 26/07
 #ggsave("../figures/TE_volcano_plot.png", volcanoplot, dpi=300)
@@ -167,7 +178,7 @@ ntd <- normTransform(dds)
 # needs work on colours, etc
 heatmap <- pheatmap(assay(ntd)[select,], cluster_rows=T, show_rownames=F, show_colnames = T, cluster_cols=T, annotation_col=df, fontsize_row = 6, fontsize_col = 6)
 
-# Try withoout clustering rows just to 
+# Try withoout clustering rows just to see
 pheatmap(assay(ntd)[select,], cluster_rows=F, show_rownames=F, show_colnames = T, cluster_cols=F, annotation_col=df, fontsize_row = 6, fontsize_col = 6)
 
 # Save plot, rough draft save 23/07, not saving again
@@ -207,7 +218,7 @@ DE_TEs_int_signif_df <- DE_TEs_int_signif_all %>%
 # remove everything after first underscore inclusive as this is the chromosome name and position left over from earlier- potentially could impact the information
 TE_names_only <- DE_TEs_int_signif_df %>%
   mutate(TEs = str_remove(TE_names, "_.*")) %>%
-  select(TEs)
+  dplyr::select(TEs)
 
 # Search the database using my list of TEs as keys (external gene name), return the transcript or gene biotype which should tell you whether it is a lncRNA
 # Need to return chromosome coordinates too so I know which Bc1 it is
@@ -221,3 +232,12 @@ lncRNA
 #write.csv(lncRNA, "../results_data/lncRNAs.csv")
 
 ## End ##
+
+## Still in progress to get correct output ##
+
+# output the TE names with chr etc attached still
+TE_names_for_matching <- DE_TEs_int_signif_df %>%
+  dplyr::select(TE_names) %>%
+  as.data.frame()
+#export
+#write.table(TE_names_for_matching, "../results_data/TE_names_formatching.txt", row.names = F, col.names = F, quote = F)
