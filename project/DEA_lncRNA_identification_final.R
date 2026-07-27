@@ -149,7 +149,7 @@ DE_TEs_int <- na.omit(DE_TEs_int)
 
 # Plot
 volcanoplot <- ggplot(DE_TEs_int, aes(x = log2FoldChange, y = -log10(padj), color = signif)) +
-  geom_point(size = 1)+labs(x = "Log2 Fold Change", y = "-Log10 p-value",title = "Differentially Expressed TEs") +theme(legend.position = "right")+ scale_colour_manual(name = "Expression", labels = c("Downregulated", "Not significant", "Upregulated"), values = c("Down" = "blue", "NotSig" = "darkgrey", "Up" = "red")) + theme_classic()
+  geom_point(size = 1)+labs(x = "Log2 Fold Change", y = "-Log10 p-value",title = "Differentially Expressed TEs") +theme(legend.position = "right")+ scale_colour_manual(name = "Expression", labels = c("Downregulated: 169", "Not significant", "Upregulated: 226"), values = c("Down" = "blue", "NotSig" = "darkgrey", "Up" = "red")) + theme_classic()
 
 # Save plot, saved 26/07
 #ggsave("../figures/TE_volcano_plot.png", volcanoplot, dpi=300)
@@ -210,8 +210,9 @@ TE_names_only <- DE_TEs_int_signif_df %>%
   select(TEs)
 
 # Search the database using my list of TEs as keys (external gene name), return the transcript or gene biotype which should tell you whether it is a lncRNA
+# Need to return chromosome coordinates too so I know which Bc1 it is
 
-lncRNA <- getBM(attributes = c("external_gene_name", "transcript_biotype", "gene_biotype"), filters = c("external_gene_name"), values = TE_names_only, mart = ensembl)
+lncRNA <- getBM(attributes = c("external_gene_name", "transcript_biotype", "gene_biotype", "chromosome_name", "start_position", "end_position"), filters = c("external_gene_name"), values = TE_names_only, mart = ensembl)
 
 # one lncRNA was returned: Bc1
 lncRNA
