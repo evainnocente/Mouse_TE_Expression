@@ -1,0 +1,65 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## combine with bash code chunks
+
+# import lncRNA pos
+f <- read_tsv("../results_data/lncRNA_results/full_matching_results_female.tsv", col_names = F)
+f <- as.data.frame(f)
+colnames(f) <- c("TE_name","TE_fam","TE_class","TE_pos","lncRNA_name","lncRNA_pos")
+
+m <- read_tsv("../results_data/lncRNA_results/full_matching_results_male.tsv", col_names = F)
+m <- as.data.frame(m)
+colnames(m) <- c("TE_name","TE_fam","TE_class","TE_pos","lncRNA_name","lncRNA_pos")
+m
+
+# merge with signif
+head(DE_TEs_female_signif_only) # merge column TE with TE_name, keep signif
+female_full <- inner_join(DE_TEs_female_signif_only, f, by = join_by(TE == TE_name))
+head(female_full)
+female <- female_full %>%
+  dplyr::select(c(1, 7:12)) %>%
+  relocate(c(1,3,4,2,5,6,7)) %>%
+  mutate(sex="female")
+head(female)
+
+# Repeat for male
+head(DE_TEs_male_signif_only) # merge column TE with TE_name, keep signif
+male_full <- inner_join(DE_TEs_male_signif_only, m, by = join_by(TE == TE_name))
+head(male_full)
+male <- male_full %>%
+  dplyr::select(c(1, 7:12)) %>%
+  relocate(c(1,3,4,2,5,6,7)) %>%
+  mutate(sex="male")
+head(male)
+
+# Vertical join
+combined_lnc_res <- bind_rows(female, male)#
+dim(combined_lnc_res)
+
+# Write out
+#write.csv(combined_lnc_res, "../results_data/lncRNA_results/combined_lnc_res.csv", row.names = F)
+
+## Pie chart of TE classes ##
+getwd()
+
+# Data frame with TE name, family, class
+classes <- read_tsv("../data/piechart/class_female.tsv", col_names = F)
+classes <- as.data.frame(classes)
+
+colnames(classes) <- c("TE", "Class")
+head(classes)
+
+ggplot(classes, aes(x = Class, fill = Class)) + geom_bar() + theme_classic() + coord_radial(theta="x", start = 0, reverse = "none")
+
+library(viridisLite)
+ggplot(classes, aes(x = "", fill = Class)) +
+  geom_bar(width = 1, color = NA) +
+  coord_polar(theta = "y") + scale_fill_brewer(palette = "Set1") + theme_void()
+
+class_freq_barplot <- ggplot(classes, aes(x = Class, fill = Class)) + geom_bar()+theme_classic()+theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none") + scale_fill_viridis_d() + scale_x_discrete(name = "Class") +
+  scale_y_continuous(name = "Count")
+
+ggsave("../figures/classfreq_barplot.png", class_freq_barplot, dpi = 300)
