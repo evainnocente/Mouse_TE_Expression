@@ -5,5 +5,6 @@ This project analyses RNA-seq data from 10 female and 10 male mice exposed to ei
 
 Samples were collected 5 days after treatment. 
 
-The project directory contains scripts used to trim reads, check read quality, generate a genome index, map reads to the reference genome, and quantify the reads.
-Results_data contains significantly differentially expressed TEs and matched lncRNAs.
+The project/ directory contains scripts used to trim reads, check read quality, generate a genome index, map reads to the reference genome, and quantify the reads.
+data/ contains sample and treatment metadata.
+results_data/ contains read quality reports.
