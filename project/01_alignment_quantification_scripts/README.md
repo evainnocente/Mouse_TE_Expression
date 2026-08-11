@@ -1,0 +1,1 @@
+Scripts for checking RNA sequencing read quality, aggregating read quality reports, generating a genome index for alignment, aligning reads to the reference genome, and quantifying transposable elements in the data.
